@@ -40,7 +40,7 @@ public class SlimeJetComponent : IOrganelleComponent
 
     public void OnAttachToCell(PlacedOrganelle organelle)
     {
-        // See comment in MovementComponent.OnAttachToCell
+        // See comment in FlagellumComponent.OnAttachToCell
         parentOrganelle = organelle;
 
         organellePosition = Hex.AxialToCartesian(organelle.Position);

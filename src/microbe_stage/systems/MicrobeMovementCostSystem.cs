@@ -1,4 +1,4 @@
-namespace Systems;
+﻿namespace Systems;
 
 using System;
 using Components;
@@ -6,49 +6,14 @@ using DefaultEcs;
 using DefaultEcs.System;
 using DefaultEcs.Threading;
 using Godot;
-using World = DefaultEcs.World;
+using Thrive.microbe_stage;
 
-/// <summary>
-///     Handles applying <see cref="MicrobeControl" /> to a microbe
-/// </summary>
-/// <remarks>
-///     <para>
-///         The only write this does to <see cref="MicrobeControl" /> is ensuring the movement direction is normalized.
-///     </para>
-/// </remarks>
-/// <remarks>
-///     <para>
-///         Once save compatibility is broken after 0.6.7 add with temporary effects amd strain affected
-///     </para>
-/// </remarks>
-[With(typeof(MicrobeControl))]
-[With(typeof(OrganelleContainer))]
-[With(typeof(CellProperties))]
-[With(typeof(CompoundStorage))]
-[With(typeof(Physics))]
-[With(typeof(WorldPosition))]
-[With(typeof(Health))]
-
-// [With(typeof(MicrobeTemporaryEffects))]
-// [With(typeof(StrainAffected))]
-[ReadsComponent(typeof(CellProperties))]
-[ReadsComponent(typeof(WorldPosition))]
-[ReadsComponent(typeof(AttachedToEntity))]
-[ReadsComponent(typeof(MicrobeColony))]
-[ReadsComponent(typeof(MicrobeTemporaryEffects))]
-[WritesToComponent(typeof(StrainAffected))]
-[RunsAfter(typeof(PhysicsBodyCreationSystem))]
-[RunsAfter(typeof(PhysicsBodyDisablingSystem))]
-[RunsAfter(typeof(OsmoregulationAndHealingSystem))]
-[RunsBefore(typeof(ProcessSystem))]
-[RunsBefore(typeof(PhysicsBodyControlSystem))]
-[RuntimeCost(14)]
-public sealed class MicrobeMovementSystem : AEntitySetSystem<float>
+public class MicrobeMovementCostSystem : AEntitySetSystem<float>
 {
     private readonly IWorldSimulation worldSimulation;
     private readonly PhysicalWorld physicalWorld;
 
-    public MicrobeMovementSystem(IWorldSimulation worldSimulation, PhysicalWorld physicalWorld, World world,
+    public MicrobeMovementCostSystem(IWorldSimulation worldSimulation, PhysicalWorld physicalWorld, World world,
         IParallelRunner runner) : base(world, runner, Constants.SYSTEM_HIGHER_ENTITIES_PER_THREAD)
     {
         this.worldSimulation = worldSimulation;
@@ -57,125 +22,50 @@ public sealed class MicrobeMovementSystem : AEntitySetSystem<float>
 
     protected override void Update(float delta, in Entity entity)
     {
-        ref var physics = ref entity.Get<Physics>();
+        ref var microbeControl = ref entity.Get<MicrobeControl>();
+        float requestedMoveForce = Mathf.Min(microbeControl.MovementDirection.Length(), 1.0f);
+        float strainMultiplier = GetStrainAtpMultiplier(in entity);
 
-        if (!physics.IsBodyEffectivelyEnabled())
-            return;
+        ref var atpBudget = ref entity.Get<AtpBudget>();
+        ref OrganelleContainer organelleContainer = ref entity.Get<OrganelleContainer>();
 
-        // Skip dead microbes being allowed to move, this is now needed as the death system keeps the physics body
-        // alive so velocity still moves microbes for a bit even after death
-        if (entity.Get<Health>().Dead)
+        if (strainMultiplier > 1.0f && requestedMoveForce <= MathUtils.EPSILON)
         {
-            // Disable control to not have the dead microbes maintain rotation or anything like that
-            physicalWorld.DisableMicrobeBodyControl(physics.Body!);
-            return;
-        }
-
-        if (entity.Has<MicrobeColonyMember>())
-        {
-            GD.PrintErr("Colony members shouldn't run movement system");
-            return;
-        }
-
-        ref var organelles = ref entity.Get<OrganelleContainer>();
-        ref var control = ref entity.Get<MicrobeControl>();
-
-        // Position is used to calculate the look direction
-        ref var position = ref entity.Get<WorldPosition>();
-
-        var lookVector = control.LookAtPoint - position.Position;
-        lookVector.Y = 0;
-        var lookVectorLength = lookVector.Length();
-
-        var turnAngle = (position.Rotation * Vector3.Forward).SignedAngleTo(lookVector, Vector3.Up);
-        var unsignedTurnAngle = Math.Abs(turnAngle);
-
-        // Linear function reaching 1 at CELL_TURN_INFLECTION_RADIANS
-        var blendFactor = MathF.PI / 4.0f * MathF.Min(unsignedTurnAngle *
-            (1.0f / Constants.CELL_TURN_INFLECTION_RADIANS), 1.0f);
-
-        // Simplify turns to 90 degrees to keep consistent turning speed
-        if (turnAngle > 0.0f)
-        {
-            lookVector = (position.Rotation
-                * new Vector3(-MathF.Sin(blendFactor), 0, -MathF.Cos(blendFactor))).Normalized();
-        }
-        else if (turnAngle < 0.0f)
-        {
-            lookVector = (position.Rotation
-                * new Vector3(MathF.Sin(blendFactor), 0, -MathF.Cos(blendFactor))).Normalized();
-        }
-        else if (lookVectorLength > MathUtils.EPSILON)
-        {
-            // Normalize vector when it has a length
-            lookVector /= lookVectorLength;
-        }
-        else
-        {
-            // Without any difference with the look at point compared to the current position, default to looking
-            // forward
-            lookVector = Vector3.Forward;
-        }
-
-#if DEBUG
-        if (!lookVector.IsNormalized())
-            throw new Exception("Look vector not normalized");
-#endif
-
-        var up = Vector3.Up;
-
-        // Math loaned from Godot.Transform.SetLookAt adapted to fit here and removed one extra operation
-        // For some reason this results in an inverse quaternion, so for simplicity this is just flipped
-        lookVector *= -1;
-        var column0 = up.Cross(lookVector);
-        var column1 = lookVector.Cross(column0);
-        var wantedRotation =
-            new Basis(column0.Normalized(), column1.Normalized(), lookVector).GetRotationQuaternion();
-
-#if DEBUG
-        if (!wantedRotation.IsNormalized())
-            throw new Exception("Created target microbe rotation is not normalized");
-
-        if (physics.Body!.IsDetached)
-            throw new Exception("Trying to run microbe control on detached body");
-#endif
-
-        var compounds = entity.Get<CompoundStorage>().Compounds;
-        ref var cellProperties = ref entity.Get<CellProperties>();
-
-        var rotationSpeed = CalculateRotationSpeed(entity, ref organelles);
-
-        var movementImpulse =
-            CalculateMovementForce(entity, ref control, ref cellProperties, ref position, ref organelles, compounds,
+            // This is calculated similarly to the regular movement cost for consistency
+            // TODO: is it fine for this to be so punishing? By taking the base movement cost here even though
+            // the cell is not moving (this could take just the portion of strain multiplier that is above 1)
+            HandleBaseMovementCost(ref organelleContainer, ref atpBudget, strainMultiplier, 1.0f,
                 delta);
-
-        if (control.State == MicrobeState.MucocystShield)
-        {
-            rotationSpeed /= Constants.MUCOCYST_SPEED_MULTIPLIER;
-            movementImpulse *= Constants.MUCOCYST_SPEED_MULTIPLIER;
+            return;
         }
 
-        physicalWorld.ApplyBodyMicrobeControl(physics.Body!, movementImpulse, wantedRotation, rotationSpeed);
+        HandleBaseMovementCost(ref organelleContainer, ref atpBudget, strainMultiplier, requestedMoveForce,
+            delta);
     }
 
-    private static float CalculateRotationSpeed(in Entity entity, ref OrganelleContainer organelles)
+    private void HandleBaseMovementCost(ref OrganelleContainer organelleContainer, ref AtpBudget atpBudget,
+        float strainMultiplier, float requestedMoveForce, float delta)
     {
-        float rotationSpeed = organelles.RotationSpeed;
+        var cost = Constants.BASE_MOVEMENT_ATP_COST * organelleContainer.HexCount *
+            requestedMoveForce * delta * strainMultiplier;
 
-        // Note that cilia taking ATP is actually calculated later, this is the max speed rotation calculation
-        // only
-
-        if (entity.Has<MicrobeColony>())
-        {
-            rotationSpeed = entity.Get<MicrobeColony>().ColonyRotationSpeed;
-        }
-
-        // Lower value is faster rotation
-        if (CheatManager.Speed > 1 && entity.Has<PlayerMarker>())
-            rotationSpeed /= CheatManager.Speed * 2;
-
-        return rotationSpeed;
+        atpBudget.SubmitAtpRequest(cost, false);
     }
+
+    private void HandleFlagellumMovementCost(ref OrganelleContainer organelleContainer, ref AtpBudget atpBudget,
+        float strainMultiplier, float requestedMoveForce, float delta)
+    {
+
+    }
+
+    private void HandleCilliaMovementCost(ref OrganelleContainer organelleContainer, ref AtpBudget atpBudget,
+        float strainMultiplier, float requestedMoveForce, float delta)
+    {
+
+    }
+    
+    
+
 
     private Vector3 CalculateMovementForce(in Entity entity, ref MicrobeControl control,
         ref CellProperties cellProperties, ref WorldPosition position,
@@ -383,31 +273,17 @@ public sealed class MicrobeMovementSystem : AEntitySetSystem<float>
         return position.Rotation * movementVector;
     }
 
-    private float GetStrainAtpMultiplier(ref StrainAffected strain)
+    private float GetStrainAtpMultiplier(in Entity entity)
     {
-        var strainFraction = strain.CalculateStrainFraction();
-        return strainFraction * Constants.STRAIN_TO_ATP_USAGE_COEFFICIENT + 1.0f;
-    }
-
-    private Vector3 CalculateMovementFromSlimeJets(ref OrganelleContainer organelles)
-    {
-        var movementVector = Vector3.Zero;
-
-        if (organelles.SlimeJets is { Count: > 0 })
+        if (!entity.Has<StrainAffected>())
         {
-            foreach (var jet in organelles.SlimeJets)
-            {
-                if (!jet.Active)
-                    continue;
-
-                // It might be better to consume the queued force always but, this probably results at most in just
-                // one extra frame of thrust whenever the jets are engaged
-                jet.ConsumeMovementForce(out var jetForce);
-                movementVector += jetForce;
-            }
+            return 1.0f;
         }
 
-        return movementVector;
+        // TODO: move this variable up in the future
+        ref var strain = ref entity.Get<StrainAffected>();
+        var strainFraction = strain.CalculateStrainFraction();
+        return strainFraction * Constants.STRAIN_TO_ATP_USAGE_COEFFICIENT + 1.0f;
     }
 
     private void CalculateColonyImpactOnMovementForce(ref MicrobeColony microbeColony, Vector3 movementDirection,

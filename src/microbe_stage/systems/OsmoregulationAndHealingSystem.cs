@@ -5,40 +5,34 @@ using Components;
 using DefaultEcs;
 using DefaultEcs.System;
 using DefaultEcs.Threading;
-using Godot;
+using Thrive.microbe_stage;
 
 /// <summary>
-///   Handles taking energy from microbes for osmoregulation (staying alive) cost and dealing damage if there's not
-///   enough energy. If a microbe has non-zero ATP, then passive health regeneration happens.
+///     Handles damage due to insufficient ATP, damage due to hydrogen sulfide, and passive health regeneration.
 /// </summary>
 /// <remarks>
-///   <para>
-///     This is marked as just reading <see cref="MicrobeStatus"/> as this has a reserved variable in it just for
-///     this systems use so writing to it doesn't conflict with other systems.
-///   </para>
+///     <para>
+///         This is marked as just reading <see cref="MicrobeStatus" /> as this has a reserved variable in it just for
+///         this systems use so writing to it doesn't conflict with other systems.
+///     </para>
 /// </remarks>
 [With(typeof(OrganelleContainer))]
 [With(typeof(CellProperties))]
 [With(typeof(MicrobeStatus))]
 [With(typeof(CompoundStorage))]
 [With(typeof(Engulfable))]
-[With(typeof(SpeciesMember))]
 [With(typeof(Health))]
+[With(typeof(AtpBudget))]
 [ReadsComponent(typeof(OrganelleContainer))]
 [ReadsComponent(typeof(CellProperties))]
 [ReadsComponent(typeof(MicrobeStatus))]
 [ReadsComponent(typeof(Engulfable))]
-[ReadsComponent(typeof(MicrobeColony))]
-[ReadsComponent(typeof(MicrobeColonyMember))]
-[ReadsComponent(typeof(MicrobeEnvironmentalEffects))]
 [RunsAfter(typeof(PilusDamageSystem))]
 [RunsAfter(typeof(DamageOnTouchSystem))]
 [RunsAfter(typeof(ToxinCollisionSystem))]
 [RuntimeCost(4)]
 public sealed class OsmoregulationAndHealingSystem : AEntitySetSystem<float>
 {
-    private GameWorld? gameWorld;
-
     private bool hydrogenSulfideDamageTrigger;
     private float elapsedSinceTrigger;
 
@@ -47,17 +41,9 @@ public sealed class OsmoregulationAndHealingSystem : AEntitySetSystem<float>
     {
     }
 
-    public void SetWorld(GameWorld world)
-    {
-        gameWorld = world;
-    }
-
     protected override void PreUpdate(float state)
     {
         base.PreUpdate(state);
-
-        if (gameWorld == null)
-            throw new InvalidOperationException("GameWorld not set");
 
         elapsedSinceTrigger += state;
 
@@ -83,13 +69,24 @@ public sealed class OsmoregulationAndHealingSystem : AEntitySetSystem<float>
             return;
 
         var compounds = entity.Get<CompoundStorage>().Compounds;
+        ref var atpBudget = ref entity.Get<AtpBudget>();
 
         HandleHitpointsRegeneration(ref health, compounds, delta);
 
-        TakeOsmoregulationEnergyCost(entity, ref cellProperties, compounds, delta);
+        HandleOsmoregulationDamage(in entity, ref status, ref health, ref cellProperties, compounds, delta);
 
-        HandleOsmoregulationDamage(entity, ref status, ref health, ref cellProperties, compounds, delta);
+        HandleHydrogenSulfideDamage(in entity, compounds, ref health, ref cellProperties);
 
+        // Reset amounts in atp budget so it is clean for the next frame.
+        atpBudget.Reset();
+
+        // There used to be the engulfing mode ATP handling here, but it is now in EngulfingSystem as it makes more
+        // sense to be in there
+    }
+
+    private void HandleHydrogenSulfideDamage(in Entity entity, CompoundBag compounds, ref Health health,
+        ref CellProperties cellProperties)
+    {
         if (hydrogenSulfideDamageTrigger
             && compounds.GetCompoundAmount(Compound.Hydrogensulfide) > Constants.HYDROGEN_SULFIDE_DAMAGE_THESHOLD
             && !entity.Get<OrganelleContainer>().HydrogenSulfideProtection)
@@ -102,9 +99,6 @@ public sealed class OsmoregulationAndHealingSystem : AEntitySetSystem<float>
             entity.SendNoticeIfPossible(() =>
                 new SimpleHUDMessage(Localization.Translate("NOTICE_HYDROGEN_SULFIDE_DAMAGE"), DisplayDuration.Short));
         }
-
-        // There used to be the engulfing mode ATP handling here, but it is now in EngulfingSystem as it makes more
-        // sense to be in there
     }
 
     private void HandleOsmoregulationDamage(in Entity entity, ref MicrobeStatus status, ref Health health,
@@ -126,69 +120,13 @@ public sealed class OsmoregulationAndHealingSystem : AEntitySetSystem<float>
         }
     }
 
-    private void TakeOsmoregulationEnergyCost(in Entity entity, ref CellProperties cellProperties,
-        CompoundBag compounds, float delta)
-    {
-        ref var organelles = ref entity.Get<OrganelleContainer>();
-
-        float environmentalMultiplier = 1.0f;
-
-        var osmoregulationCost = organelles.HexCount * cellProperties.MembraneType.OsmoregulationFactor *
-            Constants.ATP_COST_FOR_OSMOREGULATION * delta;
-
-        int colonySize = 0;
-        if (entity.Has<MicrobeColony>())
-        {
-            colonySize = entity.Get<MicrobeColony>().ColonyMembers.Length;
-        }
-        else if (entity.Has<MicrobeColonyMember>())
-        {
-            if (entity.Get<MicrobeColonyMember>().GetColonyFromMember(out var colonyEntity))
-            {
-                colonySize = colonyEntity.Get<MicrobeColony>().ColonyMembers.Length;
-            }
-        }
-
-        // 5% osmoregulation bonus per colony member
-        if (colonySize != 0)
-        {
-            osmoregulationCost *= 20.0f / (20.0f + colonySize);
-        }
-
-        // TODO: remove this check on next save breakage point
-        if (entity.Has<MicrobeEnvironmentalEffects>())
-        {
-            ref var environmentalEffects = ref entity.Get<MicrobeEnvironmentalEffects>();
-            environmentalMultiplier = environmentalEffects.OsmoregulationMultiplier;
-
-            // TODO: remove this safety check once it is no longer possible for this problem to happen
-            // https://github.com/Revolutionary-Games/Thrive/issues/5928
-            if (float.IsNaN(environmentalMultiplier) || environmentalMultiplier < 0)
-            {
-                GD.PrintErr("Microbe has invalid osmoregulation multiplier: ", environmentalMultiplier);
-
-                // Reset the data to not spam the error
-                environmentalEffects.OsmoregulationMultiplier = 1.0f;
-
-                environmentalMultiplier = 1.0f;
-            }
-        }
-
-        osmoregulationCost *= environmentalMultiplier;
-
-        // Only player species benefits from lowered osmoregulation
-        if (entity.Get<SpeciesMember>().Species.PlayerSpecies)
-            osmoregulationCost *= gameWorld!.WorldSettings.OsmoregulationMultiplier;
-
-        compounds.TakeCompound(Compound.ATP, osmoregulationCost);
-    }
-
     /// <summary>
-    ///   Damage the microbe if it's too low on ATP.
+    ///     Damage the microbe if it's too low on ATP.
     /// </summary>
     private void ApplyATPDamage(CompoundBag compounds, ref Health health, ref CellProperties cellProperties,
         in Entity entity)
     {
+        // TODO: Should this be based on atpBudget.IsMandatoryAtpRequirementCovered?
         if (compounds.GetCompoundAmount(Compound.ATP) > Constants.ATP_DAMAGE_THRESHOLD)
             return;
 
@@ -197,7 +135,7 @@ public sealed class OsmoregulationAndHealingSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Regenerate hitpoints while the cell has atp
+    ///     Regenerate hitpoints while the cell has atp
     /// </summary>
     private void HandleHitpointsRegeneration(ref Health health, CompoundBag compounds, float delta)
     {
@@ -210,15 +148,13 @@ public sealed class OsmoregulationAndHealingSystem : AEntitySetSystem<float>
             if (health.CurrentHealth >= health.MaxHealth)
                 return;
 
+            // TODO: Should this be based on atpBudget.IsMandatoryAtpRequirementCovered?
             var atpAmount = compounds.GetCompoundAmount(Compound.ATP);
-            if (atpAmount < Constants.HEALTH_REGENERATION_ATP_THRESHOLD)
+            if (atpAmount < Constants.HEALTH_REGENERATION_ATP_THRESHOLD && atpAmount / compounds.GetCapacityForCompound(Compound.ATP) <
+                Constants.HEALTH_REGENERATION_ALTERNATIVE_ATP_FRACTION)
             {
                 // Allow small cells to heal if they are almost full on ATP
-                if (atpAmount / compounds.GetCapacityForCompound(Compound.ATP) <
-                    Constants.HEALTH_REGENERATION_ALTERNATIVE_ATP_FRACTION)
-                {
-                    return;
-                }
+                return;
             }
 
             health.CurrentHealth += Constants.HEALTH_REGENERATION_RATE * delta;

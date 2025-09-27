@@ -1,4 +1,4 @@
-﻿#if DEBUG
+#if DEBUG
 #define CHECK_USED_STATISTICS
 #endif
 
@@ -15,21 +15,21 @@ using DefaultEcs;
 using DefaultEcs.System;
 using DefaultEcs.Threading;
 using Godot;
+using Thrive.microbe_stage;
 using World = DefaultEcs.World;
 
 /// <summary>
-///   Runs biological processes on entities
+///     Runs biological processes on entities
 /// </summary>
 /// <remarks>
-///   <para>
-///     This is marked as writing to the processes due to <see cref="BioProcesses.ProcessStatistics"/>
-///   </para>
+///     <para>
+///         This is marked as writing to the processes due to <see cref="BioProcesses.ProcessStatistics" />
+///     </para>
 /// </remarks>
 [With(typeof(CompoundStorage))]
 [With(typeof(BioProcesses))]
 [RunsAfter(typeof(CompoundAbsorptionSystem))]
-[RunsBefore(typeof(OsmoregulationAndHealingSystem))]
-[RunsBefore(typeof(MicrobeMovementSystem))]
+[RunsAfter(typeof(MicrobeMovementSystem))]
 [RuntimeCost(55)]
 public sealed class ProcessSystem : AEntitySetSystem<float>
 {
@@ -40,7 +40,7 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     private BiomeConditions? biome;
 
     /// <summary>
-    ///   Used to go from the calculated compound values to per second values for reporting statistics
+    ///     Used to go from the calculated compound values to per second values for reporting statistics
     /// </summary>
     private float inverseDelta;
 
@@ -50,21 +50,21 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Creates a process list to send to <see cref="BioProcesses"/> from a given list of existing organelles
+    ///     Creates a process list to send to <see cref="BioProcesses" /> from a given list of existing organelles
     /// </summary>
     /// <remarks>
-    ///   <para>
-    ///     This takes in an existing list to avoid allocations as much as possible. It is more efficient to clear the
-    ///     list if it is used for unrelated cells before calling this method.
-    ///   </para>
+    ///     <para>
+    ///         This takes in an existing list to avoid allocations as much as possible. It is more efficient to clear the
+    ///         list if it is used for unrelated cells before calling this method.
+    ///     </para>
     /// </remarks>
     public static void ComputeActiveProcessList(IReadOnlyList<IPositionedOrganelle> organelles,
         [NotNull] ref List<TweakedProcess>? result)
     {
         result ??= new List<TweakedProcess>();
 
-        int count = organelles.Count;
-        for (int i = 0; i < count; ++i)
+        var count = organelles.Count;
+        for (var i = 0; i < count; ++i)
         {
             var organelle = organelles[i];
             var processes = organelle.Definition.RunnableProcesses;
@@ -82,9 +82,9 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
 
         // Remove unmarked processes, so that old processes aren't kept around
         // Also unmarks marked processes
-        int writeIndex = 0;
+        var writeIndex = 0;
 
-        for (int readIndex = 0; readIndex < result.Count; ++readIndex)
+        for (var readIndex = 0; readIndex < result.Count; ++readIndex)
         {
             if (result[readIndex].Marked)
             {
@@ -100,28 +100,28 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Merges <paramref name="toAdd"/> into <paramref name="result"/>. <paramref name="toAdd"/> is unaffected.
+    ///     Merges <paramref name="toAdd" /> into <paramref name="result" />. <paramref name="toAdd" /> is unaffected.
     /// </summary>
     /// <remarks>
-    ///   <para>
-    ///     Linearly scans for duplicate processes (merging them). Might need to be updated to use a map provided by a
-    ///     parameter if the current algorithm is too slow.
-    ///   </para>
+    ///     <para>
+    ///         Linearly scans for duplicate processes (merging them). Might need to be updated to use a map provided by a
+    ///         parameter if the current algorithm is too slow.
+    ///     </para>
     /// </remarks>
     public static void MergeProcessLists(List<TweakedProcess> result, List<TweakedProcess> toAdd)
     {
-        int processCount = toAdd.Count;
+        var processCount = toAdd.Count;
 
-        for (int i = 0; i < processCount; ++i)
+        for (var i = 0; i < processCount; ++i)
         {
             var process = toAdd[i];
             var processKey = process.Process;
 
-            bool added = false;
+            var added = false;
 
             // Try to add to existing result first
-            int resultCount = result.Count;
-            for (int j = 0; j < resultCount; ++j)
+            var resultCount = result.Count;
+            for (var j = 0; j < resultCount; ++j)
             {
                 if (result[j].Process == processKey)
                 {
@@ -133,7 +133,7 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
                         // considered to be a real result entry
                         // To keep consistent ordering no matter what the old data is, we need to move the current
                         // item to be in place of the first non-marked item
-                        for (int l = 0; l < j; ++l)
+                        for (var l = 0; l < j; ++l)
                         {
                             if (!result[l].Marked)
                             {
@@ -179,8 +179,8 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Computes the process efficiency numbers for given organelles given the active biome data.
-    ///   <see cref="amountType"/> specifies how changes during an in-game day are taken into account.
+    ///     Computes the process efficiency numbers for given organelles given the active biome data.
+    ///     <see cref="amountType" /> specifies how changes during an in-game day are taken into account.
     /// </summary>
     public static Dictionary<string, OrganelleEfficiency> ComputeOrganelleProcessEfficiencies(
         IEnumerable<OrganelleDefinition> organelles, BiomeConditions biome,
@@ -205,28 +205,28 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Computes the simple energy balance for the given organelles in biome
+    ///     Computes the simple energy balance for the given organelles in biome
     /// </summary>
     /// <param name="organelles">The organelles to compute the balance with</param>
     /// <param name="biome">The conditions the organelles are simulated in</param>
     /// <param name="environmentTolerances">Environmental tolerances that affect the processes</param>
     /// <param name="membrane">The membrane type to adjust the energy balance with</param>
     /// <param name="onlyMovementInDirection">
-    ///   Only movement organelles that can move in this (cell origin relative) direction are calculated. Other
-    ///   movement organelles are assumed to be inactive in the balance calculation.
+    ///     Only movement organelles that can move in this (cell origin relative) direction are calculated. Other
+    ///     movement organelles are assumed to be inactive in the balance calculation.
     /// </param>
     /// <param name="includeMovementCost">
-    ///   Only when true are movement related energy costs included in the calculation. When false base movement data
-    ///   is provided, but it is not taken into account in the sums, but total movement cost is not calculated. If that
-    ///   is required then include movement cost parameter should be set to true and from the result the variables
-    ///   giving balance without movement should be used as an alternative to setting this false.
+    ///     Only when true are movement related energy costs included in the calculation. When false base movement data
+    ///     is provided, but it is not taken into account in the sums, but total movement cost is not calculated. If that
+    ///     is required then include movement cost parameter should be set to true and from the result the variables
+    ///     giving balance without movement should be used as an alternative to setting this false.
     /// </param>
     /// <param name="isPlayerSpecies">Whether this microbe is a member of the player's species</param>
     /// <param name="worldSettings">The world generation settings for this game</param>
     /// <param name="amountType">Specifies how changes during an in-game day are taken into account</param>
     /// <param name="cache">Auto-Evo Cache for speeding up the function</param>
     /// <param name="result">
-    ///   The resulting energy balance.
+    ///     The resulting energy balance.
     /// </param>
     public static void ComputeEnergyBalanceSimple(IReadOnlyList<OrganelleTemplate> organelles,
         IBiomeConditions biome, in ResolvedMicrobeTolerances environmentTolerances, MembraneType membrane,
@@ -251,21 +251,21 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Computes the full energy balance for the given organelles in biome
+    ///     Computes the full energy balance for the given organelles in biome
     /// </summary>
     /// <param name="organelles">The organelles to compute the balance with</param>
     /// <param name="biome">The conditions the organelles are simulated in</param>
     /// <param name="environmentTolerances">Environmental tolerances that affect this</param>
     /// <param name="membrane">The membrane type to adjust the energy balance with</param>
     /// <param name="onlyMovementInDirection">
-    ///   Only movement organelles that can move in this (cell origin relative) direction are calculated. Other
-    ///   movement organelles are assumed to be inactive in the balance calculation.
+    ///     Only movement organelles that can move in this (cell origin relative) direction are calculated. Other
+    ///     movement organelles are assumed to be inactive in the balance calculation.
     /// </param>
     /// <param name="includeMovementCost">
-    ///   Only when true are movement-related energy costs included in the calculation. When false base movement data
-    ///   is provided, but it is not taken into account in the sums, but total movement cost is not calculated. If that
-    ///   is required, then include movement cost parameter should be set to true, and from the result, the variables
-    ///   giving balance without movement should be used as an alternative to setting this false.
+    ///     Only when true are movement-related energy costs included in the calculation. When false base movement data
+    ///     is provided, but it is not taken into account in the sums, but total movement cost is not calculated. If that
+    ///     is required, then include movement cost parameter should be set to true, and from the result, the variables
+    ///     giving balance without movement should be used as an alternative to setting this false.
     /// </param>
     /// <param name="isPlayerSpecies">Whether this microbe is a member of the player's species</param>
     /// <param name="worldSettings">The world generation settings for this game</param>
@@ -284,8 +284,8 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
         // Once simple balance is calculated we add the extra info on top, this approach loops the organelles twice
         // but reduces code duplication
 
-        int organelleCount = organelles.Count;
-        for (int i = 0; i < organelleCount; ++i)
+        var organelleCount = organelles.Count;
+        for (var i = 0; i < organelleCount; ++i)
         {
             var organelle = organelles[i];
 
@@ -316,15 +316,15 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Computes the compound balances for given organelle list in a patch and at a given time during the day (or
-    ///   using longer timespan values)
+    ///     Computes the compound balances for given organelle list in a patch and at a given time during the day (or
+    ///     using longer timespan values)
     /// </summary>
     /// <remarks>
-    ///   <para>
-    ///     Assumes that all processes run at maximum speed but only if input compounds are present in
-    ///     <see cref="biome"/> when <see cref="requireInputCompoundsInBiome"/> is true. If false processes can be
-    ///     assumed to run at normal speed even without the input compounds being present in the given biome.
-    ///   </para>
+    ///     <para>
+    ///         Assumes that all processes run at maximum speed but only if input compounds are present in
+    ///         <see cref="biome" /> when <see cref="requireInputCompoundsInBiome" /> is true. If false processes can be
+    ///         assumed to run at normal speed even without the input compounds being present in the given biome.
+    ///     </para>
     /// </remarks>
     public static void ComputeCompoundBalance(IEnumerable<OrganelleDefinition> organelles, IBiomeConditions biome,
         ResolvedMicrobeTolerances environmentTolerances, CompoundAmountType amountType,
@@ -370,14 +370,14 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Computes the compound balances for given organelle list in a patch and at a given time during the day (or
-    ///   using longer timespan values)
+    ///     Computes the compound balances for given organelle list in a patch and at a given time during the day (or
+    ///     using longer timespan values)
     /// </summary>
     /// <remarks>
-    ///   <para>
-    ///     Assumes that the cell produces at most as much ATP as it consumes (but can only run processes that have
-    ///     input compounds present in <see cref="biome"/>)
-    ///   </para>
+    ///     <para>
+    ///         Assumes that the cell produces at most as much ATP as it consumes (but can only run processes that have
+    ///         input compounds present in <see cref="biome" />)
+    ///     </para>
     /// </remarks>
     public static void ComputeCompoundBalanceAtEquilibrium(IEnumerable<OrganelleDefinition> organelles,
         IBiomeConditions biome, ResolvedMicrobeTolerances environmentTolerances, CompoundAmountType amountType,
@@ -391,7 +391,7 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
             }
         }
 
-        float consumptionProductionRatio = energyBalance.TotalConsumption / energyBalance.TotalProduction;
+        var consumptionProductionRatio = energyBalance.TotalConsumption / energyBalance.TotalProduction;
 
         foreach (var organelle in organelles)
         {
@@ -401,14 +401,14 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
                     biome, amountType, true);
 
                 // If the cell produces more ATP than it needs, its ATP producing processes need to be toned down
-                bool useRatio = speedAdjusted.Outputs.ContainsKey(Compound.ATP) && consumptionProductionRatio < 1.0f;
+                var useRatio = speedAdjusted.Outputs.ContainsKey(Compound.ATP) && consumptionProductionRatio < 1.0f;
 
                 foreach (var input in speedAdjusted.Inputs)
                 {
                     if (input.Key == Compound.ATP)
                         continue;
 
-                    float amount = input.Value;
+                    var amount = input.Value;
 
                     if (useRatio)
                         amount *= consumptionProductionRatio;
@@ -422,7 +422,7 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
                     if (output.Key == Compound.ATP)
                         continue;
 
-                    float amount = output.Value;
+                    var amount = output.Value;
 
                     if (useRatio)
                         amount *= consumptionProductionRatio;
@@ -443,9 +443,9 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Calculates into the balances how long it takes for each compound type to be filled
+    ///     Calculates into the balances how long it takes for each compound type to be filled
     /// </summary>
-    /// <returns>The value of <see cref="balancesToSupplement"/> supplemented with the fill times</returns>
+    /// <returns>The value of <see cref="balancesToSupplement" /> supplemented with the fill times</returns>
     public static Dictionary<Compound, CompoundBalance> ComputeCompoundFillTimes(
         Dictionary<Compound, CompoundBalance> balancesToSupplement,
         float nominalCapacity, Dictionary<Compound, float> specificCapacities)
@@ -466,15 +466,15 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Calculates ATP balance with the given organelle in the given <see cref="biome"/> (so only processes with
-    ///   input compounds present in the biome can run)
+    ///     Calculates ATP balance with the given organelle in the given <see cref="biome" /> (so only processes with
+    ///     input compounds present in the biome can run)
     /// </summary>
     public static (float Production, float Consumption) CalculateOrganelleATPBalance(OrganelleTemplate organelle,
         IBiomeConditions biome, CompoundAmountType amountType, float speedModifier,
         SimulationCache? cache)
     {
-        float processATPProduction = 0.0f;
-        float processATPConsumption = 0.0f;
+        var processATPProduction = 0.0f;
+        var processATPConsumption = 0.0f;
 
         foreach (var process in organelle.Definition.RunnableProcesses)
         {
@@ -501,8 +501,8 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Adds the ATP balance tracking to the <see cref="EnergyBalanceInfoFull"/> for the given organelle in the given
-    ///   <see cref="biome"/> (so only processes with input compounds present in the biome can run)
+    ///     Adds the ATP balance tracking to the <see cref="EnergyBalanceInfoFull" /> for the given organelle in the given
+    ///     <see cref="biome" /> (so only processes with input compounds present in the biome can run)
     /// </summary>
     public static void AddOrganelleATPTracking(OrganelleTemplate organelle,
         IBiomeConditions biome, ResolvedMicrobeTolerances environmentTolerances, CompoundAmountType amountType,
@@ -533,15 +533,15 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Calculates the maximum speed a process can run at in a biome based on the environmental compounds.
-    ///   Can be switched between the average, maximum etc. conditions that occur in the span of an in-game day.
+    ///     Calculates the maximum speed a process can run at in a biome based on the environmental compounds.
+    ///     Can be switched between the average, maximum etc. conditions that occur in the span of an in-game day.
     /// </summary>
     /// <remarks>
-    ///   <para>
-    ///     If <see cref="requireInputCompoundsInBiome"/> is true then this method checks that the process inputs
-    ///     (except ATP) is present in <see cref="biome"/> and if some input is not available then the process is
-    ///     calculated to have <b>0</b> speed.
-    ///   </para>
+    ///     <para>
+    ///         If <see cref="requireInputCompoundsInBiome" /> is true then this method checks that the process inputs
+    ///         (except ATP) is present in <see cref="biome" /> and if some input is not available then the process is
+    ///         calculated to have <b>0</b> speed.
+    ///     </para>
     /// </remarks>
     public static ProcessSpeedInformation CalculateProcessMaximumSpeed(TweakedProcess process,
         float speedModifier, IBiomeConditions biome, CompoundAmountType pointInTimeType,
@@ -549,8 +549,8 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     {
         var result = new ProcessSpeedInformation(process.Process);
 
-        float speedFactor = 1.0f;
-        float efficiency = 1.0f;
+        var speedFactor = 1.0f;
+        var efficiency = 1.0f;
 
         if (requireInputCompoundsInBiome)
         {
@@ -636,7 +636,7 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
 
         // To not claim the output is the limiting factor when no inputs could be taken at all, track if any inputs
         // are added
-        bool tookInputs = false;
+        var tookInputs = false;
 
         // So that the speed factor is available here
         foreach (var entry in process.Process.Inputs)
@@ -689,11 +689,11 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Calculates an active process list for a species for use in <see cref="IWorldEffect"/>. Note that this only
-    ///   supports <see cref="MicrobeSpecies"/> currently.
+    ///     Calculates an active process list for a species for use in <see cref="IWorldEffect" />. Note that this only
+    ///     supports <see cref="MicrobeSpecies" /> currently.
     /// </summary>
     /// <returns>
-    ///   Balance modifier that is to be passed to <see cref="CalculateEffectiveProcessSpeedForEffect"/>
+    ///     Balance modifier that is to be passed to <see cref="CalculateEffectiveProcessSpeedForEffect" />
     /// </returns>
     public static float CalculateSpeciesActiveProcessListForEffect(Species species,
         List<TweakedProcess> processesResult, BiomeConditions conditions,
@@ -743,8 +743,8 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Since temperature works differently to other compounds, we use this method to deal with it. Logic here
-    ///   is liable to be updated in the future to use alternative effect models.
+    ///     Since temperature works differently to other compounds, we use this method to deal with it. Logic here
+    ///     is liable to be updated in the future to use alternative effect models.
     /// </summary>
     public static float CalculateTemperatureEffect(float temperature)
     {
@@ -754,7 +754,7 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Sets the biome whose environmental values affect processes
+    ///     Sets the biome whose environmental values affect processes
     /// </summary>
     public void SetBiome(BiomeConditions newBiome)
     {
@@ -762,13 +762,13 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     }
 
     /// <summary>
-    ///   Get the current amount of environmental compound
+    ///     Get the current amount of environmental compound
     /// </summary>
     /// <remarks>
-    ///   <para>
-    ///     TODO: this takes a lot of time during the process system run so improving this performance would help
-    ///     quite a lot to make the process system run faster.
-    ///   </para>
+    ///     <para>
+    ///         TODO: this takes a lot of time during the process system run so improving this performance would help
+    ///         quite a lot to make the process system run faster.
+    ///     </para>
     /// </remarks>
     public float GetAmbient(Compound compound, CompoundAmountType amountType)
     {
@@ -799,8 +799,9 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
     {
         ref var storage = ref entity.Get<CompoundStorage>();
         ref var processes = ref entity.Get<BioProcesses>();
+        ref var atpRequests = ref entity.Get<AtpBudget>();
 
-        float overallSpeedModifier = 1.0f;
+        var overallSpeedModifier = 1.0f;
 
         // TODO: remove this if check once save breakage is done
         if (entity.Has<MicrobeEnvironmentalEffects>())
@@ -834,7 +835,7 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
         }
 #endif
 
-        ProcessNode(ref processes, ref storage, overallSpeedModifier, delta);
+        ProcessNode(ref processes, ref storage, ref atpRequests, overallSpeedModifier, delta);
     }
 
     private static void CalculateSimplePartOfEnergyBalance(IReadOnlyList<OrganelleTemplate> organelles,
@@ -847,10 +848,10 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
         var processATPConsumption = 0.0f;
         var movementATPConsumption = 0.0f;
 
-        int hexCount = 0;
+        var hexCount = 0;
 
-        int organelleCount = organelles.Count;
-        for (int i = 0; i < organelleCount; ++i)
+        var organelleCount = organelles.Count;
+        for (var i = 0; i < organelleCount; ++i)
         {
             var organelle = organelles[i];
 
@@ -967,13 +968,121 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
         return environmentalCompoundProperties.Ambient;
     }
 
-    private void ProcessNode(ref BioProcesses processor, ref CompoundStorage storage, float overallSpeedModifier,
-        float delta)
+    private static float CalculateInputSpaceConstraintModifier(float delta, CompoundBag bag, in TweakedProcess process,
+        float overallSpeedModifier, SingleProcessStatistics? currentProcessStatistics, BioProcess processData,
+        float environmentModifier)
+    {
+        var inputSpaceConstraintModifier = 1.0f;
+        foreach (var entry in processData.Inputs)
+        {
+            if (entry.Key.IsEnvironmental)
+                continue;
+
+            var inputCompound = entry.Key.ID;
+
+            var inputNeeded = entry.Value * process.Rate * environmentModifier * process.SpeedMultiplier *
+                overallSpeedModifier;
+
+            // currentProcessStatistics?.AddInputAmount(entry.Key, 0);
+            // We don't multiply by delta here because we report the per-second values anyway. In the actual
+            // process output numbers (computed after testing the speed), we need to multiply by inverse delta
+            currentProcessStatistics?.AddInputAmount(inputCompound, inputNeeded);
+
+            inputNeeded *= delta;
+
+            // If not enough we can't run the process unless we can lower spaceConstraintModifier enough
+            var availableAmount = bag.GetCompoundAmount(inputCompound);
+            if (availableAmount >= inputNeeded)
+            {
+                continue;
+            }
+
+            var availableRatio = availableAmount > MathUtils.EPSILON ? availableAmount / inputNeeded : 0.0f;
+            if (availableRatio > Constants.MINIMUM_RUNNABLE_PROCESS_FRACTION)
+            {
+                inputSpaceConstraintModifier = Mathf.Min(inputSpaceConstraintModifier, availableRatio);
+            }
+            else
+            {
+                currentProcessStatistics?.AddLimitingFactor(inputCompound);
+                return 0.0f;
+            }
+        }
+
+        return inputSpaceConstraintModifier;
+    }
+
+    private static float CalculateOutputSpaceConstraintModifier(float delta, CompoundBag bag, 
+        in TweakedProcess process, in AtpBudget atpBudget, float overallSpeedModifier, 
+        SingleProcessStatistics? currentProcessStatistics, BioProcess processData, float environmentModifier,
+        out bool outIsATPProducer)
+    {
+        outIsATPProducer = false;
+        var outputSpaceConstraintModifier = 1.0f;
+        foreach (var entry in processData.Outputs)
+        {
+            var outputCompound = entry.Key.ID;
+            if (outputCompound == Compound.ATP)
+                outIsATPProducer = true;
+
+            // For now, lets assume compounds we produce are also useful
+            bag.SetUseful(outputCompound);
+
+            var outputAdded = entry.Value * process.Rate * environmentModifier * process.SpeedMultiplier *
+                overallSpeedModifier;
+
+            // currentProcessStatistics?.AddOutputAmount(entry.Key, 0);
+            currentProcessStatistics?.AddOutputAmount(outputCompound, outputAdded);
+
+            outputAdded = outputAdded * delta * outputSpaceConstraintModifier;
+
+            // if environmental right now, this isn't released anywhere
+            if (entry.Key.IsEnvironmental)
+                continue;
+
+            // If no space we can't do the process, if we can't adjust the space constraint modifier enough
+            var remainingSpace = bag.GetCapacityForCompound(outputCompound) - bag.GetCompoundAmount(outputCompound);
+            if (outputCompound == Compound.ATP)
+            {
+                remainingSpace += atpBudget.GetOutstandingAtpRequired();
+            }
+            
+            if (outputAdded > remainingSpace)
+            {
+                var canRun = false;
+
+                if (remainingSpace > MathUtils.EPSILON)
+                {
+                    var neededModifier = remainingSpace / outputAdded;
+
+                    if (neededModifier > Constants.MINIMUM_RUNNABLE_PROCESS_FRACTION)
+                    {
+                        outputSpaceConstraintModifier = neededModifier;
+                        canRun = true;
+                    }
+
+                    // With all the modifiers we can lose a tiny bit of compound that won't fit due to rounding
+                    // errors, but we ignore that here
+                }
+
+                if (!canRun)
+                {
+                    currentProcessStatistics?.AddCapacityProblem(outputCompound);
+                    return 0.0f;
+                }
+            }
+        }
+
+        return outputSpaceConstraintModifier;
+    }
+
+    private void ProcessNode(ref BioProcesses processor, ref CompoundStorage storage, ref AtpBudget atpBudget,
+        float overallSpeedModifier, float delta)
     {
         var bag = storage.Compounds;
-
         // Set all compounds to not be useful, when some compound is used it will be marked useful
         bag.ClearUseful();
+        atpBudget.TryFillAtpBudgetFromStorage(in bag);
 
         var processStatistics = processor.ProcessStatistics;
 
@@ -1003,9 +1112,6 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
                     continue;
 
                 // TODO: reporting duplicate process types would be nice in debug mode here
-
-                var processData = process.Process;
-
                 var currentProcessStatistics = processStatistics?.GetAndMarkUsed(process);
 
                 if (currentProcessStatistics != null)
@@ -1022,13 +1128,14 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
                         currentProcessStatistics.UpdateProcessDataIfNeeded(process);
 
                         currentProcessStatistics.BeginFrame(delta);
-                        RunProcess(delta, processData, bag, process, ref processor, overallSpeedModifier,
+                        RunProcess(delta, bag, process, ref atpBudget, ref processor, overallSpeedModifier,
                             currentProcessStatistics);
                     }
                 }
                 else
                 {
-                    RunProcess(delta, processData, bag, process, ref processor, overallSpeedModifier, null);
+                    RunProcess(delta, bag, process, ref atpBudget, ref processor, overallSpeedModifier,
+                        null);
                 }
             }
         }
@@ -1039,169 +1146,41 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
         processStatistics?.RemoveUnused();
     }
 
-    private void RunProcess(float delta, BioProcess processData, CompoundBag bag, TweakedProcess process,
+    private void RunProcess(float delta, CompoundBag bag, TweakedProcess process, ref AtpBudget atpBudget,
         ref BioProcesses processorInfo, float overallSpeedModifier, SingleProcessStatistics? currentProcessStatistics)
     {
-        // Bool for can your cell do the process
-        bool canDoProcess = true;
+        // First check the environmental compounds so that we can build the right environment modifier for accurate
+        // check of normal compound input amounts
+        var processData = process.Process;
+        var environmentModifier =
+            CalculateEnvironmentModifier(bag, overallSpeedModifier, currentProcessStatistics, processData);
 
-        float environmentModifier = 1.0f;
+        if (process.SpeedMultiplier > 1)
+        {
+            process.SpeedMultiplier = 1;
+        }
 
         // This modifies the process overall speed to allow really fast processes to run, for example if there are
         // a ton of one organelle it might consume 100 glucose per go, which might be unlikely for the cell to have
         // so if there is *some* but not enough space for results (and also inputs) this can run the process as
         // fraction of the speed to allow the cell to still function well
-        float spaceConstraintModifier = 1.0f;
-
-        // First check the environmental compounds so that we can build the right environment modifier for accurate
-        // check of normal compound input amounts
-        foreach (var entry in processData.Inputs)
-        {
-            var inputCompound = entry.Key.ID;
-
-            // Set used compounds to be useful, we don't want to purge those
-            bag.SetUseful(inputCompound);
-
-            // TODO: would there be a more performant way to check if compound is environmental?
-            // Maybe by modifying the process inputs and outputs to use CompoundDefinition rather than plain compound?
-            if (!entry.Key.IsEnvironmental)
-                continue;
-
-            // Processing runs on the current game time following values
-            var ambient = GetAmbient(inputCompound, CompoundAmountType.Current);
-
-            // currentProcessStatistics?.AddInputAmount(entry.Key, entry.Value * inverseDelta);
-            currentProcessStatistics?.AddInputAmount(inputCompound, ambient);
-
-            // do environmental modifier here, and save it for later
-            environmentModifier *= inputCompound == Compound.Temperature ?
-                CalculateTemperatureEffect(ambient) :
-                ambient / (entry.Value * overallSpeedModifier);
-
-            if (environmentModifier <= MathUtils.EPSILON)
-                currentProcessStatistics?.AddLimitingFactor(inputCompound);
-        }
-
-        if (environmentModifier <= MathUtils.EPSILON)
-            canDoProcess = false;
-
-        if (process.SpeedMultiplier <= 0)
-        {
-            canDoProcess = false;
-        }
-        else if (process.SpeedMultiplier > 1)
-        {
-            process.SpeedMultiplier = 1;
-        }
-
         // Compute spaceConstraintModifier before updating the final use and input amounts
-        foreach (var entry in processData.Inputs)
-        {
-            if (entry.Key.IsEnvironmental)
-                continue;
-
-            var inputCompound = entry.Key.ID;
-
-            var inputRemoved = entry.Value * process.Rate * environmentModifier * process.SpeedMultiplier *
-                overallSpeedModifier;
-
-            // currentProcessStatistics?.AddInputAmount(entry.Key, 0);
-            // We don't multiply by delta here because we report the per-second values anyway. In the actual
-            // process output numbers (computed after testing the speed), we need to multiply by inverse delta
-            currentProcessStatistics?.AddInputAmount(inputCompound, inputRemoved);
-
-            inputRemoved = inputRemoved * delta * spaceConstraintModifier;
-
-            // If not enough we can't run the process unless we can lower spaceConstraintModifier enough
-            var availableAmount = bag.GetCompoundAmount(inputCompound);
-            if (availableAmount < inputRemoved)
-            {
-                bool canRun = false;
-
-                if (availableAmount > MathUtils.EPSILON)
-                {
-                    var neededModifier = availableAmount / inputRemoved;
-
-                    if (neededModifier > Constants.MINIMUM_RUNNABLE_PROCESS_FRACTION)
-                    {
-                        spaceConstraintModifier = neededModifier;
-                        canRun = true;
-
-                        // Due to rounding errors there can be very small disparity here between the amount
-                        // available and what we will take with the modifiers. See the comment in outputs for
-                        // more details
-                    }
-                }
-
-                if (!canRun)
-                {
-                    canDoProcess = false;
-                    currentProcessStatistics?.AddLimitingFactor(inputCompound);
-                }
-            }
-        }
-
-        bool isATPProducer = false;
-
-        foreach (var entry in processData.Outputs)
-        {
-            var outputCompound = entry.Key.ID;
-
-            // For now, lets assume compounds we produce are also useful
-            bag.SetUseful(outputCompound);
-
-            var outputAdded = entry.Value * process.Rate * environmentModifier * process.SpeedMultiplier *
-                overallSpeedModifier;
-
-            // currentProcessStatistics?.AddOutputAmount(entry.Key, 0);
-            currentProcessStatistics?.AddOutputAmount(outputCompound, outputAdded);
-
-            outputAdded = outputAdded * delta * spaceConstraintModifier;
-
-            // if environmental right now, this isn't released anywhere
-            if (entry.Key.IsEnvironmental)
-                continue;
-
-            // If no space we can't do the process, if we can't adjust the space constraint modifier enough
-            var remainingSpace = bag.GetCapacityForCompound(outputCompound) - bag.GetCompoundAmount(outputCompound);
-            if (outputAdded > remainingSpace)
-            {
-                bool canRun = false;
-
-                if (remainingSpace > MathUtils.EPSILON)
-                {
-                    var neededModifier = remainingSpace / outputAdded;
-
-                    if (neededModifier > Constants.MINIMUM_RUNNABLE_PROCESS_FRACTION)
-                    {
-                        spaceConstraintModifier = neededModifier;
-                        canRun = true;
-                    }
-
-                    // With all the modifiers we can lose a tiny bit of compound that won't fit due to rounding
-                    // errors, but we ignore that here
-                }
-
-                if (!canRun)
-                {
-                    canDoProcess = false;
-                    currentProcessStatistics?.AddCapacityProblem(outputCompound);
-                }
-            }
-
-            if (outputCompound == Compound.ATP)
-                isATPProducer = true;
-        }
+        var inputSpaceConstraintModifier = CalculateInputSpaceConstraintModifier(delta, bag, in process,
+            overallSpeedModifier, currentProcessStatistics, processData, environmentModifier);
+        var outputSpaceConstraintModifier = CalculateOutputSpaceConstraintModifier(delta, bag, in process,
+            in atpBudget, overallSpeedModifier, currentProcessStatistics, processData, environmentModifier,
+            out var isATPProducer);
+        var spaceConstraintModifier = Mathf.Min(inputSpaceConstraintModifier, outputSpaceConstraintModifier);
 
         // Only carry out this process if you have all the required ingredients and enough space for the outputs
-        if (!canDoProcess)
+        if (process.SpeedMultiplier <= MathUtils.EPSILON || spaceConstraintModifier <= MathUtils.EPSILON)
         {
             if (currentProcessStatistics != null)
                 currentProcessStatistics.CurrentSpeed = 0;
             return;
         }
 
-        float totalModifier = process.Rate * delta * environmentModifier * spaceConstraintModifier *
+        var totalModifier = process.Rate * delta * environmentModifier * spaceConstraintModifier *
             process.SpeedMultiplier * overallSpeedModifier;
 
         // Apply ATP production speed cap if in effect
@@ -1257,7 +1236,46 @@ public sealed class ProcessSystem : AEntitySetSystem<float>
 
             currentProcessStatistics?.AddOutputAmount(outputCompound, outputGenerated * inverseDelta);
 
+            if (outputCompound == Compound.ATP)
+            {
+                outputGenerated = atpBudget.FillAtpRequests(outputGenerated);
+            }
+
             bag.AddCompound(outputCompound, outputGenerated);
         }
+    }
+
+    private float CalculateEnvironmentModifier(CompoundBag bag, float overallSpeedModifier,
+        SingleProcessStatistics? currentProcessStatistics, BioProcess processData)
+    {
+        var environmentModifier = 1.0f;
+        foreach (var entry in processData.Inputs)
+        {
+            var inputCompound = entry.Key.ID;
+
+            // Set used compounds to be useful, we don't want to purge those
+            bag.SetUseful(inputCompound);
+
+            // TODO: would there be a more performant way to check if compound is environmental?
+            // Maybe by modifying the process inputs and outputs to use CompoundDefinition rather than plain compound?
+            if (!entry.Key.IsEnvironmental)
+                continue;
+
+            // Processing runs on the current game time following values
+            var ambient = GetAmbient(inputCompound, CompoundAmountType.Current);
+
+            // currentProcessStatistics?.AddInputAmount(entry.Key, entry.Value * inverseDelta);
+            currentProcessStatistics?.AddInputAmount(inputCompound, ambient);
+
+            // do environmental modifier here, and save it for later
+            environmentModifier *= inputCompound == Compound.Temperature ?
+                CalculateTemperatureEffect(ambient) :
+                ambient / (entry.Value * overallSpeedModifier);
+
+            if (environmentModifier <= MathUtils.EPSILON)
+                currentProcessStatistics?.AddLimitingFactor(inputCompound);
+        }
+
+        return environmentModifier;
     }
 }

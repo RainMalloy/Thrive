@@ -1,4 +1,12 @@
-﻿using Components;
+﻿//#define INDUCE_LAG
+
+// TODO: BONK PROGRAMMER HEAD IF PREVIOUS LINE IS COMMITTED!
+
+#if INDUCE_LAG
+using System;
+using System.Threading;
+#endif
+using Components;
 using DefaultEcs;
 using DefaultEcs.Threading;
 using Godot;
@@ -7,8 +15,8 @@ using Systems;
 using World = DefaultEcs.World;
 
 /// <summary>
-///   Contains all the parts needed to simulate a microbial world. Separate from (but used by) the
-///   <see cref="MicrobeStage"/> to also allow other parts of the code to easily run a microbe simulation
+///     Contains all the parts needed to simulate a microbial world. Separate from (but used by) the
+///     <see cref="MicrobeStage" /> to also allow other parts of the code to easily run a microbe simulation
 /// </summary>
 public partial class MicrobeWorldSimulation : WorldSimulationWithPhysics
 {
@@ -132,14 +140,27 @@ public partial class MicrobeWorldSimulation : WorldSimulationWithPhysics
     [AssignOnlyChildItemsOnDeserialize]
     public FluidCurrentsSystem FluidCurrentsSystem { get; private set; } = null!;
 
+    public override bool HasSystemsWithPendingOperations()
+    {
+        return microbeVisualsSystem.HasPendingOperations();
+    }
+
+    public override void FreeNodeResources()
+    {
+        base.FreeNodeResources();
+
+        soundEffectSystem.FreeNodeResources();
+        spatialAttachSystem.FreeNodeResources();
+    }
+
     /// <summary>
-    ///   First initialization step which creates all the system objects. When loading from a save objects of this
-    ///   type should have <see cref="AssignOnlyChildItemsOnDeserializeAttribute"/> and this method should be called
-    ///   before those child properties are loaded.
+    ///     First initialization step which creates all the system objects. When loading from a save objects of this
+    ///     type should have <see cref="AssignOnlyChildItemsOnDeserializeAttribute" /> and this method should be called
+    ///     before those child properties are loaded.
     /// </summary>
     /// <param name="visualDisplayRoot">Godot Node to place all simulation graphics underneath</param>
     /// <param name="cloudSystem">
-    ///   Compound cloud simulation system. This method will call <see cref="CompoundCloudSystem.Init"/>
+    ///     Compound cloud simulation system. This method will call <see cref="CompoundCloudSystem.Init" />
     /// </param>
     /// <param name="spawnEnvironment">Spawn environment data to give to microbes spawned by systems</param>
     public void Init(Node visualDisplayRoot, CompoundCloudSystem cloudSystem, IMicrobeSpawnEnvironment spawnEnvironment)
@@ -271,8 +292,8 @@ public partial class MicrobeWorldSimulation : WorldSimulationWithPhysics
     }
 
     /// <summary>
-    ///   Second phase initialization that requires access to the current game info. Must also be performed, otherwise
-    ///   this class won't function correctly.
+    ///     Second phase initialization that requires access to the current game info. Must also be performed, otherwise
+    ///     this class won't function correctly.
     /// </summary>
     /// <param name="currentGame">Currently started game</param>
     public void InitForCurrentGame(GameProperties currentGame)
@@ -302,25 +323,12 @@ public partial class MicrobeWorldSimulation : WorldSimulationWithPhysics
     }
 
     /// <summary>
-    ///   Clears system data that has been stored based on the player location. Call this when the player changes
-    ///   locations a lot by respawning or by moving patches
+    ///     Clears system data that has been stored based on the player location. Call this when the player changes
+    ///     locations a lot by respawning or by moving patches
     /// </summary>
     public void ClearPlayerLocationDependentCaches()
     {
         SpawnSystem.ClearSpawnCoordinates();
-    }
-
-    public override bool HasSystemsWithPendingOperations()
-    {
-        return microbeVisualsSystem.HasPendingOperations();
-    }
-
-    public override void FreeNodeResources()
-    {
-        base.FreeNodeResources();
-
-        soundEffectSystem.FreeNodeResources();
-        spatialAttachSystem.FreeNodeResources();
     }
 
     internal void OverrideMicrobeAIRandomSeed(int seed)
@@ -346,7 +354,16 @@ public partial class MicrobeWorldSimulation : WorldSimulationWithPhysics
 
     protected override void OnProcessFixedLogic(float delta)
     {
-        int availableThreads = TaskExecutor.Instance.ParallelTasks;
+#if INDUCE_LAG
+        // thanks to 0HyperCube for the idea of doing this here
+        if (new Random().NextDouble() < 0.01)
+        {
+            Thread.Sleep(1000);
+            GD.Print("Lagging");
+        }
+#endif
+
+        var availableThreads = TaskExecutor.Instance.ParallelTasks;
 
         var settings = Settings.Instance;
         if (settings.RunAutoEvoDuringGamePlay)

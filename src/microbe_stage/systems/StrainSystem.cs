@@ -1,8 +1,9 @@
-﻿using Components;
+﻿namespace Systems;
+
+using Components;
 using DefaultEcs;
 using DefaultEcs.System;
 using DefaultEcs.Threading;
-using Systems;
 using World = DefaultEcs.World;
 
 [With(typeof(StrainAffected))]

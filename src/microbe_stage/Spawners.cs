@@ -8,6 +8,7 @@ using Components;
 using DefaultEcs;
 using DefaultEcs.Command;
 using Godot;
+using Thrive.microbe_stage;
 using Xoshiro.PRNG32;
 using Xoshiro.PRNG64;
 
@@ -682,6 +683,8 @@ public static class SpawnHelpers
             // Microbes must always apply visual scale for them to work correctly
             ApplyVisualScale = true,
         });
+
+        entity.Set<AtpBudget>();
 
         entity.Set(new RenderPriorityOverride(Constants.MICROBE_DEFAULT_RENDER_PRIORITY));
 

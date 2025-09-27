@@ -4,10 +4,9 @@ using Godot;
 using ThriveScriptsShared;
 
 /// <summary>
-///   Flagellum for making cells move faster. TODO: rename this to FlagellumComponent (this is named like this due to
-///   only it being initially being named like this)
+///     Flagellum for making cells move faster.
 /// </summary>
-public class MovementComponent : IOrganelleComponent
+public class FlagellumComponent : IOrganelleComponent
 {
     private readonly float momentum;
 
@@ -15,18 +14,30 @@ public class MovementComponent : IOrganelleComponent
 
     private float animationSpeed = 0.25f;
     private bool animationDirty = true;
-
     private float flagellumLength;
 
     private bool lastUsed;
     private Vector3 force;
 
-    public MovementComponent(float momentum)
+    public FlagellumComponent(float momentum)
     {
         this.momentum = momentum;
     }
 
     public bool UsesSyncProcess => animationDirty;
+
+    public float UseForMovement(Vector3 wantedMovementDirection, CompoundBag compounds, Quaternion extraColonyRotation,
+        bool isBacteria, float delta)
+    {
+        return CalculateMovementForce(compounds, wantedMovementDirection, extraColonyRotation, isBacteria, delta);
+    }
+
+    public float CalculateAtpCost(float elapsed)
+    {
+        var requiredEnergy = (Constants.FLAGELLA_ENERGY_COST + Constants.FLAGELLA_MAX_UPGRADE_ATP_USAGE
+            * flagellumLength) * elapsed;
+        return requiredEnergy;
+    }
 
     public void OnAttachToCell(PlacedOrganelle organelle)
     {
@@ -78,21 +89,15 @@ public class MovementComponent : IOrganelleComponent
         }
     }
 
-    public float UseForMovement(Vector3 wantedMovementDirection, CompoundBag compounds, Quaternion extraColonyRotation,
-        bool isBacteria, float delta)
-    {
-        return CalculateMovementForce(compounds, wantedMovementDirection, extraColonyRotation, isBacteria, delta);
-    }
-
     /// <summary>
-    ///   Calculate the momentum of the movement organelle based on angle towards middle of cell.
-    ///   If the flagella is placed in the microbe's center, hence delta equals 0, consider defaultPos as the
-    ///   organelle's "false" position.
+    ///     Calculate the momentum of the movement organelle based on angle towards middle of cell.
+    ///     If the flagella is placed in the microbe's center, hence delta equals 0, consider defaultPos as the
+    ///     organelle's "false" position.
     /// </summary>
     private static Vector3 CalculateForce(Hex pos, float momentum)
     {
-        Vector3 organellePosition = Hex.AxialToCartesian(pos);
-        Vector3 middle = Hex.AxialToCartesian(new Hex(0, 0));
+        var organellePosition = Hex.AxialToCartesian(pos);
+        var middle = Hex.AxialToCartesian(new Hex(0, 0));
         var delta = middle - organellePosition;
         if (delta == Vector3.Zero)
             delta = CellPropertiesHelpers.DefaultVisualPos;
@@ -111,13 +116,13 @@ public class MovementComponent : IOrganelleComponent
     }
 
     /// <summary>
-    ///   The final calculated force is multiplied by elapsed before applying. So we don't have to do that.
-    ///   But we need to take the right amount of atp.
+    ///     The final calculated force is multiplied by elapsed before applying. So we don't have to do that.
+    ///     But we need to take the right amount of atp.
     /// </summary>
     /// <remarks>
-    ///   <para>
-    ///     The movementDirection is the player or AI input. It is in non-rotated cell oriented coordinates
-    ///   </para>
+    ///     <para>
+    ///         The movementDirection is the player or AI input. It is in non-rotated cell oriented coordinates
+    ///     </para>
     /// </remarks>
     private float CalculateMovementForce(CompoundBag compounds, Vector3 wantedMovementDirection,
         Quaternion extraColonyRotation, bool isBacteria, float elapsed)
@@ -138,8 +143,7 @@ public class MovementComponent : IOrganelleComponent
         var newAnimationSpeed = 2.3f;
         lastUsed = true;
 
-        var requiredEnergy = (Constants.FLAGELLA_ENERGY_COST + Constants.FLAGELLA_MAX_UPGRADE_ATP_USAGE
-            * flagellumLength) * elapsed;
+        var requiredEnergy = CalculateAtpCost(elapsed);
 
         var availableEnergy = compounds.TakeCompound(Compound.ATP, requiredEnergy);
 
@@ -172,7 +176,7 @@ public class MovementComponentFactory : IOrganelleComponentFactory
 
     public IOrganelleComponent Create()
     {
-        return new MovementComponent(Momentum);
+        return new FlagellumComponent(Momentum);
     }
 
     public void Check(string name)
@@ -195,14 +199,6 @@ public class FlagellumUpgrades : IComponentSpecificUpgrades
         LengthFraction = lengthFraction;
     }
 
-    public bool Equals(IComponentSpecificUpgrades? other)
-    {
-        if (other is not FlagellumUpgrades otherFlagellum)
-            return false;
-
-        return otherFlagellum.LengthFraction == LengthFraction;
-    }
-
     public object Clone()
     {
         return new FlagellumUpgrades(LengthFraction);
@@ -217,5 +213,13 @@ public class FlagellumUpgrades : IComponentSpecificUpgrades
     {
         // Could maybe round the value a tiny bit as it wouldn't impact the visuals...
         return (ulong)int.RotateRight(LengthFraction.GetHashCode(), 1);
+    }
+
+    public bool Equals(IComponentSpecificUpgrades? other)
+    {
+        if (other is not FlagellumUpgrades otherFlagellum)
+            return false;
+
+        return otherFlagellum.LengthFraction == LengthFraction;
     }
 }

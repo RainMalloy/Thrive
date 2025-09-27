@@ -95,8 +95,7 @@ public class CiliaComponent : IOrganelleComponent
         // TODO: would it make more sense to have this in the movement system?
         if (rawRotation > Constants.CILIA_ROTATION_NEEDED_FOR_ATP_COST)
         {
-            var cost = Math.Clamp(rawRotation * Constants.CILIA_ROTATION_ENERGY_BASE_MULTIPLIER,
-                Constants.CILIA_ROTATION_NEEDED_FOR_ATP_COST, Constants.CILIA_ENERGY_COST);
+            var cost = CalculateAtpCost(rawRotation);
 
             var requiredEnergy = cost * timeSinceRotationSample;
 
@@ -112,6 +111,13 @@ public class CiliaComponent : IOrganelleComponent
         }
 
         timeSinceRotationSample = 0;
+    }
+
+    private static float CalculateAtpCost(float rawRotation)
+    {
+        var cost = Math.Clamp(rawRotation * Constants.CILIA_ROTATION_ENERGY_BASE_MULTIPLIER,
+            Constants.CILIA_ROTATION_NEEDED_FOR_ATP_COST, Constants.CILIA_ENERGY_COST);
+        return cost;
     }
 
     public void UpdateSync(in Entity microbeEntity, float delta)

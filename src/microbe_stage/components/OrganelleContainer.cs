@@ -47,7 +47,7 @@ public struct OrganelleContainer
     ///   Flagellum components that need to be animated when the cell is moving at top speed
     /// </summary>
     [JsonIgnore]
-    public List<MovementComponent>? ThrustComponents;
+    public List<FlagellumComponent>? FlagellumComponents;
 
     // Note that this exists here for the potential future need that MicrobeMovementSystem will need to use cilia
     // and reduce rotation rate if not enough ATP to rotate at full speed
@@ -571,10 +571,10 @@ public static class OrganelleContainerHelpers
                         container.SlimeJets.Add(slimeJetComponent);
                     }
                 }
-                else if (organelleComponent is MovementComponent thrustComponent)
+                else if (organelleComponent is FlagellumComponent thrustComponent)
                 {
-                    container.ThrustComponents ??= new List<MovementComponent>();
-                    container.ThrustComponents.Add(thrustComponent);
+                    container.FlagellumComponents ??= new List<FlagellumComponent>();
+                    container.FlagellumComponents.Add(thrustComponent);
                 }
                 else if (organelleComponent is CiliaComponent rotationComponent)
                 {
@@ -673,7 +673,7 @@ public static class OrganelleContainerHelpers
     public static void FetchLayoutOrganelleComponents(this ref OrganelleContainer container)
     {
         container.SlimeJets?.Clear();
-        container.ThrustComponents?.Clear();
+        container.FlagellumComponents?.Clear();
         container.RotationComponents?.Clear();
 
         // This method can be safely called again if this happened to run too early
@@ -692,10 +692,10 @@ public static class OrganelleContainerHelpers
                         container.SlimeJets.Add(slimeJetComponent);
                     }
                 }
-                else if (organelleComponent is MovementComponent thrustComponent)
+                else if (organelleComponent is FlagellumComponent thrustComponent)
                 {
-                    container.ThrustComponents ??= new List<MovementComponent>();
-                    container.ThrustComponents.Add(thrustComponent);
+                    container.FlagellumComponents ??= new List<FlagellumComponent>();
+                    container.FlagellumComponents.Add(thrustComponent);
                 }
                 else if (organelleComponent is CiliaComponent rotationComponent)
                 {
